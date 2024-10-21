@@ -1,3 +1,4 @@
+//Write a C program to study all the file operations related SYSTEM CALLS supported by UNIX OS and C libraries for file operations
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
