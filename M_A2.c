@@ -1,104 +1,160 @@
-//Write a C program to demonstrate indexing and associated operations.
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 
-#define MAX_SIZE 10
+#define MAX_RECORDS 100
+#define RECORD_FILE "records.dat"
+#define INDEX_FILE "index.dat"
 
-// Function to display the array elements
-void displayArray(int arr[], int size) {
-    printf("Array elements: ");
-    for (int i = 0; i < size; i++) {
-        printf("%d ", arr[i]);
-    }
-    printf("\n");
-}
+// Record structure
+typedef struct {
+    int id;              // Unique ID for the record
+    char name[30];       // Name of the record
+} Record;
 
-// Function to insert an element into the array
-int insertElement(int arr[], int size, int element, int index) {
-    if (size >= MAX_SIZE) {
-        printf("Array is full. Cannot insert element.\n");
-        return size;
-    }
-    if (index < 0 || index > size) {
-        printf("Invalid index. Please enter an index between 0 and %d.\n", size);
-        return size;
-    }
-    for (int i = size; i > index; i--) {
-        arr[i] = arr[i - 1];
-    }
-    arr[index] = element;
-    return size + 1;
-}
+// Index structure to map ID to file position
+typedef struct {
+    int id;              // ID of the record
+    int position;        // File position of the record (in bytes)
+} IndexEntry;
 
-// Function to delete an element from the array
-int deleteElement(int arr[], int size, int index) {
-    if (index < 0 || index >= size) {
-        printf("Invalid index. Please enter an index between 0 and %d.\n", size - 1);
-        return size;
-    }
-    for (int i = index; i < size - 1; i++) {
-        arr[i] = arr[i + 1];
-    }
-    return size - 1;
-}
-
-// Function to find the index of a given element
-void findElementIndex(int arr[], int size, int element) {
-    int found = 0;
-    for (int i = 0; i < size; i++) {
-        if (arr[i] == element) {
-            printf("Element %d found at index %d.\n", element, i);
-            found = 1;
-            break;
-        }
-    }
-    if (!found) {
-        printf("Element %d not found in the array.\n", element);
-    }
-}
+void addRecord();
+void createIndex();
+void searchRecord();
+void displayAllRecords();
 
 int main() {
-    int arr[MAX_SIZE];
-    int size = 0;
-    int choice, element, index;
+    int choice;
 
-    do {
-        printf("\nMenu:\n");
-        printf("1. Insert Element\n");
-        printf("2. Delete Element\n");
-        printf("3. Display Array\n");
-        printf("4. Find Element Index\n");
+    while (1) {
+        printf("\nFile Indexing System\n");
+        printf("1. Add Record\n");
+        printf("2. Create Index\n");
+        printf("3. Search Record by ID\n");
+        printf("4. Display All Records\n");
         printf("5. Exit\n");
         printf("Enter your choice: ");
         scanf("%d", &choice);
 
         switch (choice) {
             case 1:
-                printf("Enter element to insert: ");
-                scanf("%d", &element);
-                printf("Enter index (0 to %d): ", size);
-                scanf("%d", &index);
-                size = insertElement(arr, size, element, index);
+                addRecord();
                 break;
             case 2:
-                printf("Enter index of element to delete (0 to %d): ", size - 1);
-                scanf("%d", &index);
-                size = deleteElement(arr, size, index);
+                createIndex();
                 break;
             case 3:
-                displayArray(arr, size);
+                searchRecord();
                 break;
             case 4:
-                printf("Enter element to find: ");
-                scanf("%d", &element);
-                findElementIndex(arr, size, element);
+                displayAllRecords();
                 break;
             case 5:
-                printf("Exiting program.\n");
-                break;
+                exit(0);
             default:
                 printf("Invalid choice. Please try again.\n");
         }
-    } while (choice != 5);
-
+    }
     return 0;
+}
+
+void addRecord() {
+    int file = open(RECORD_FILE, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (file == -1) {
+        printf("Error opening file\n");
+        return;
+    }
+
+    Record record;
+    printf("Enter record ID: ");
+    scanf("%d", &record.id);
+    printf("Enter record name: ");
+    scanf("%s", record.name);
+
+    write(file, &record, sizeof(Record));
+    close(file);
+
+    printf("Record added successfully.\n");
+}
+
+void createIndex() {
+    int file = open(RECORD_FILE, O_RDONLY);
+    int indexFile = open(INDEX_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (file == -1 || indexFile == -1) {
+        printf("Error opening file\n");
+        return;
+    }
+
+    IndexEntry indexEntries[MAX_RECORDS];
+    Record record;
+    int recordCount = 0;
+
+    while (read(file, &record, sizeof(Record)) == sizeof(Record) && recordCount < MAX_RECORDS) {
+        indexEntries[recordCount].id = record.id;
+        indexEntries[recordCount].position = recordCount * sizeof(Record);
+        recordCount++;
+    }
+
+    write(indexFile, indexEntries, sizeof(IndexEntry) * recordCount);
+
+    close(file);
+    close(indexFile);
+    printf("Index created successfully.\n");
+}
+
+void searchRecord() {
+    int id;
+    printf("Enter the ID of the record to search: ");
+    scanf("%d", &id);
+
+    int indexFile = open(INDEX_FILE, O_RDONLY);
+    int file = open(RECORD_FILE, O_RDONLY);
+    if (indexFile == -1 || file == -1) {
+        printf("Error opening file\n");
+        return;
+    }
+
+    IndexEntry indexEntries[MAX_RECORDS];
+    int indexCount = read(indexFile, indexEntries, sizeof(IndexEntry) * MAX_RECORDS) / sizeof(IndexEntry);
+
+    int found = 0;
+    for (int i = 0; i < indexCount; i++) {
+        if (indexEntries[i].id == id) {
+            lseek(file, indexEntries[i].position, SEEK_SET);
+            Record record;
+            read(file, &record, sizeof(Record));
+            printf("Record found:\n");
+            printf("ID: %d, Name: %s\n", record.id, record.name);
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found) {
+        printf("Record not found.\n");
+    }
+
+    close(indexFile);
+    close(file);
+}
+
+void displayAllRecords() {
+    int file = open(RECORD_FILE, O_RDONLY);
+    if (file == -1) {
+        printf("Error opening file\n");
+        return;
+    }
+
+    Record record;
+    printf("\nAll Records:\n");
+    printf("ID\tName\n");
+    printf("-----------------\n");
+
+    while (read(file, &record, sizeof(Record)) == sizeof(Record)) {
+        printf("%d\t%s\n", record.id, record.name);
+    }
+
+    close(file);
 }
